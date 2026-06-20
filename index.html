@@ -187,7 +187,7 @@
         <!-- Tabs -->
         <div class="flex border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 pt-2 shadow-sm">
             <button class="tab-btn active px-4 py-2 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 font-medium text-sm" data-target="preview">Document Preview</button>
-            <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 font-medium text-sm" data-target="summaryView">AI Summary</button>
+            <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 font-medium text-sm" data-target="summaryView">Insights & Analysis</button>
         </div>
         
         <!-- Tab Content -->
@@ -222,8 +222,8 @@
             <div id="summaryView" class="tab-content hidden h-full">
                 <div class="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-200 dark:border-slate-700 p-6 h-full overflow-y-auto markdown-body" id="summaryContent">
                     <div class="flex flex-col items-center justify-center h-full text-gray-400 text-center">
-                        <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-gray-300 dark:text-slate-600"></i>
-                        <p>Click "Summarize" in the left panel or ask the chat to generate insights here.</p>
+                        <i class="fa-solid fa-chart-pie text-4xl mb-4 text-gray-300 dark:text-slate-600"></i>
+                        <p>Click a Quick Action in the left panel to generate document-wide insights here.</p>
                     </div>
                 </div>
             </div>
@@ -397,9 +397,9 @@
             // Quick Actions & Chips
             DOM.quickActionBtns.forEach(btn => {
                 btn.addEventListener('click', () => {
-                    DOM.chatInput.value = btn.dataset.prompt;
-                    handleChatSubmit();
-                    if(btn.dataset.prompt.includes("Summary")) switchTab('summaryView');
+                    const prompt = btn.dataset.prompt;
+                    const title = btn.innerText.trim();
+                    triggerInsightGeneration(prompt, title);
                 });
             });
             DOM.chipBtns.forEach(btn => {
@@ -794,6 +794,48 @@
             }[tag]));
         }
 
+        async function triggerInsightGeneration(prompt, title) {
+            if (!STATE.apiValid) {
+                alert("Please connect a valid Gemini API Key first.");
+                DOM.apiKeyInput.focus();
+                return;
+            }
+
+            switchTab('summaryView');
+
+            // Show loading in center panel
+            DOM.summaryContent.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-brand-600 dark:text-brand-400 text-center">
+                    <div class="loader !w-10 !h-10 !border-4 mb-4"></div>
+                    <p class="font-medium text-lg">Generating ${title}...</p>
+                    <p class="text-sm text-gray-500 mt-2">Analyzing selected documents. This may take a moment.</p>
+                </div>
+            `;
+
+            // Add user message to history to keep context, but show a clean action in UI
+            appendMessageToUI('user', `[Action: Generate ${title}]`);
+
+            try {
+                const response = await callGeminiAPI(prompt);
+                
+                // Format with title
+                const formattedContent = `# ${title}\n\n${response}`;
+                DOM.summaryContent.innerHTML = marked.parse(formattedContent);
+                
+                appendMessageToUI('assistant', `I have successfully generated the **${title}** and displayed it in the Insights panel for easy reading.`);
+                
+            } catch (err) {
+                DOM.summaryContent.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-red-500 text-center">
+                        <i class="fa-solid fa-triangle-exclamation text-4xl mb-4"></i>
+                        <p class="font-medium text-lg">Failed to generate insight</p>
+                        <p class="text-sm text-gray-500 mt-2">${err.message}</p>
+                    </div>
+                `;
+                appendMessageToUI('assistant', `**Error:** Failed to generate ${title}. \n\nDetails: ${err.message}`);
+            }
+        }
+
         async function handleChatSubmit() {
             const query = DOM.chatInput.value.trim();
             if (!query) return;
@@ -830,8 +872,8 @@
                 document.getElementById(loadingId).remove();
                 appendMessageToUI('assistant', response);
                 
-                // If it was a summary request, also inject it into the Summary Tab
-                if (query.toLowerCase().includes('summarize') || query.toLowerCase().includes('summary')) {
+                // If it was a generic analysis request via chat, also mirror it into the Insights Tab
+                if (query.toLowerCase().includes('summarize') || query.toLowerCase().includes('summary') || query.toLowerCase().includes('insight') || query.toLowerCase().includes('compare') || query.toLowerCase().includes('extract')) {
                     DOM.summaryContent.innerHTML = marked.parse(response);
                     switchTab('summaryView');
                 }
