@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuMind QA AI | Engineering Document Assistant</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- PDF.js for local PDF extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+
+    <!-- Mammoth.js for local DOCX extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar for better UI */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+        
+        /* Markdown Styles */
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; }
+        .markdown-body h2 { font-size: 1.25em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3em; }
+        .dark .markdown-body h2 { border-color: #334155; }
+        .markdown-body p { margin-bottom: 1em; line-height: 1.6; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
+        .markdown-body strong { font-weight: 600; color: #0c4a6e; }
+        .dark .markdown-body strong { color: #38bdf8; }
+        .markdown-body blockquote { border-left: 4px solid #cbd5e1; padding-left: 1em; color: #64748b; font-style: italic; }
+        .dark .markdown-body blockquote { border-color: #475569; color: #94a3b8; }
+        
+        .glowing-green {
+            box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.6);
+        }
+        
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0ea5e9;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-slate-900 dark:text-gray-200 h-screen overflow-hidden flex font-sans transition-colors duration-200">
+
+    <!-- Left Panel: Sidebar -->
+    <aside class="w-72 border-r border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col h-full flex-shrink-0 z-10">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-brand-600 dark:text-brand-500 text-xl"></i>
+                <h1 class="font-bold text-lg text-brand-900 dark:text-white tracking-tight">DocuMind QA AI</h1>
+            </div>
+            <button id="themeToggle" class="text-gray-500 hover:text-brand-600 dark:text-gray-400 dark:hover:text-brand-400 transition-colors">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-6">
+            
+            <!-- API Key Section -->
+            <div class="space-y-2">
+                <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 tracking-wider">Gemini API Connection</label>
+                <div class="flex gap-2">
+                    <input type="password" id="apiKeyInput" placeholder="Paste Gemini API Key" class="flex-1 text-sm px-3 py-2 border rounded bg-gray-50 dark:bg-slate-900 border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+                    <button id="testApiBtn" class="bg-brand-600 hover:bg-brand-700 text-white px-3 py-2 rounded text-sm transition-colors" title="Test Connection">
+                        <i class="fa-solid fa-plug"></i>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <div id="apiStatusIndicator" class="w-2.5 h-2.5 rounded-full bg-gray-400"></div>
+                    <span id="apiStatusText">Not Connected</span>
+                </div>
+                <p class="text-[10px] text-gray-400 italic">Key stored in memory only. Resets on refresh.</p>
+            </div>
+
+            <!-- Model Selection -->
+            <div class="space-y-2">
+                <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 tracking-wider">AI Model</label>
+                <select id="modelSelect" class="w-full text-sm px-3 py-2 border rounded bg-gray-50 dark:bg-slate-900 border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest)</option>
+                    <option value="gemini-2.5-pro">Gemini 2.5 Pro (Advanced Reasoning)</option>
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    <option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Flash Preview</option>
+                </select>
+            </div>
+
+            <!-- Notebooks Section -->
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 tracking-wider">Notebooks</label>
+                    <button id="newNotebookBtn" class="text-brand-600 dark:text-brand-400 hover:underline text-xs"><i class="fa-solid fa-plus"></i> New</button>
+                </div>
+                <select id="notebookSelect" class="w-full text-sm px-3 py-2 border rounded bg-gray-50 dark:bg-slate-900 border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+
+            <!-- Documents Section -->
+            <div class="space-y-3">
+                <div class="flex flex-col gap-2">
+                    <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 tracking-wider">Project Documents</label>
+                    <label class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-dashed border-brand-400 dark:border-brand-600 rounded text-sm text-brand-700 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-slate-700 cursor-pointer transition-colors">
+                        <i class="fa-solid fa-upload"></i> Upload PDF/DOCX/TXT
+                        <input type="file" id="fileUpload" multiple accept=".pdf,.docx,.txt" class="hidden">
+                    </label>
+                </div>
+                <div id="documentList" class="space-y-2 max-h-48 overflow-y-auto">
+                    <!-- Populated by JS -->
+                    <p class="text-xs text-gray-500 dark:text-gray-400 italic text-center py-2">No documents uploaded in this session.</p>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="space-y-2">
+                <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 tracking-wider">Quick Actions</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="quick-action-btn bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-xs py-2 px-2 rounded text-left transition-colors" data-prompt="Provide a comprehensive Executive Summary of the selected documents. Include Key Requirements, Acceptance Criteria, and Risks.">
+                        <i class="fa-solid fa-align-left text-brand-600 dark:text-brand-400 w-4"></i> Summarize
+                    </button>
+                    <button class="quick-action-btn bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-xs py-2 px-2 rounded text-left transition-colors" data-prompt="Extract the key acceptance criteria and inspection requirements from the selected documents.">
+                        <i class="fa-solid fa-list-check text-brand-600 dark:text-brand-400 w-4"></i> Extract Criteria
+                    </button>
+                    <button class="quick-action-btn bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-xs py-2 px-2 rounded text-left transition-colors" data-prompt="Compare the selected documents. Identify similarities, differences, and any compliance conflicts.">
+                        <i class="fa-solid fa-code-compare text-brand-600 dark:text-brand-400 w-4"></i> Compare
+                    </button>
+                    <button class="quick-action-btn bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-xs py-2 px-2 rounded text-left transition-colors" data-prompt="Create a detailed QA/QC checklist based on the selected documents.">
+                        <i class="fa-solid fa-check-double text-brand-600 dark:text-brand-400 w-4"></i> QA Checklist
+                    </button>
+                </div>
+            </div>
+
+        </div>
+        
+        <div class="p-3 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-200 dark:border-slate-700 text-center">
+            Files kept in local memory. API queries sent to Google Gemini.
+        </div>
+    </aside>
+
+    <!-- Middle Panel: Document Viewer -->
+    <main class="flex-1 flex flex-col h-full bg-gray-100 dark:bg-slate-900">
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 pt-2 shadow-sm">
+            <button class="tab-btn active px-4 py-2 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 font-medium text-sm" data-target="preview">Document Preview</button>
+            <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 font-medium text-sm" data-target="summaryView">AI Summary</button>
+        </div>
+        
+        <!-- Tab Content -->
+        <div class="flex-1 overflow-y-auto p-6 relative">
+            <!-- Loading Overlay -->
+            <div id="docLoadingOverlay" class="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm z-20 hidden flex-col items-center justify-center">
+                <div class="loader mb-4"></div>
+                <p class="text-sm font-medium text-brand-700 dark:text-brand-400">Processing Document Text...</p>
+                <p class="text-xs text-gray-500 mt-1">Extracting pages locally. Please wait.</p>
+            </div>
+
+            <!-- Preview Tab -->
+            <div id="preview" class="tab-content h-full">
+                <div id="noDocSelected" class="h-full flex flex-col items-center justify-center text-gray-400">
+                    <i class="fa-regular fa-file-pdf text-6xl mb-4 text-gray-300 dark:text-slate-600"></i>
+                    <p>Select a document from the left panel to preview its extracted text.</p>
+                    <p class="text-xs mt-2 max-w-md text-center">Note: Since this is a local-only application, PDFs and DOCX files are parsed into raw text for analysis.</p>
+                </div>
+                <div id="docViewer" class="hidden h-full flex flex-col">
+                    <h2 id="docViewerTitle" class="text-xl font-bold text-gray-800 dark:text-white mb-2"></h2>
+                    <div class="flex gap-4 mb-4 text-xs text-gray-500">
+                        <span id="docViewerType" class="bg-gray-200 dark:bg-slate-700 px-2 py-1 rounded"></span>
+                        <span id="docViewerPages" class="bg-gray-200 dark:bg-slate-700 px-2 py-1 rounded"></span>
+                    </div>
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4 overflow-y-auto font-mono text-sm shadow-inner text-gray-700 dark:text-gray-300 whitespace-pre-wrap" id="docViewerContent">
+                        <!-- Text injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Summary Tab -->
+            <div id="summaryView" class="tab-content hidden h-full">
+                <div class="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-200 dark:border-slate-700 p-6 h-full overflow-y-auto markdown-body" id="summaryContent">
+                    <div class="flex flex-col items-center justify-center h-full text-gray-400 text-center">
+                        <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-gray-300 dark:text-slate-600"></i>
+                        <p>Click "Summarize" in the left panel or ask the chat to generate insights here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Right Panel: Chat Interface -->
+    <aside class="w-[400px] border-l border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col h-full flex-shrink-0 z-10 shadow-lg">
+        <!-- Chat Header -->
+        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between bg-gray-50 dark:bg-slate-800/50">
+            <h2 class="font-semibold text-gray-800 dark:text-white flex items-center gap-2">
+                <i class="fa-solid fa-robot text-brand-500"></i> AI Assistant
+            </h2>
+            <div class="flex gap-2">
+                <button id="exportChatBtn" class="text-gray-500 hover:text-brand-600 transition-colors" title="Export Chat">
+                    <i class="fa-solid fa-download"></i>
+                </button>
+                <button id="clearChatBtn" class="text-gray-500 hover:text-red-500 transition-colors" title="Clear Chat">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat History -->
+        <div id="chatHistory" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-slate-900">
+            <!-- Welcome Message -->
+            <div class="flex gap-3">
+                <div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-robot text-brand-600 dark:text-brand-400"></i>
+                </div>
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-3 rounded-lg rounded-tl-none shadow-sm text-sm">
+                    <p>Hello! I am your <strong>DocuMind QA AI</strong>. Connect your API key, upload your documents, and ask me to analyze them.</p>
+                    <p class="mt-2 text-xs text-gray-500">I specialize in QA/QC, engineering analysis, and extracting standards and compliance info.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Suggested Chips -->
+        <div class="px-4 py-2 flex gap-2 overflow-x-auto whitespace-nowrap bg-white dark:bg-slate-800 border-t border-gray-100 dark:border-slate-700 custom-scrollbar hide-scrollbar" id="promptChips">
+            <button class="chip-btn border border-gray-200 dark:border-slate-600 rounded-full px-3 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">Find non-compliances</button>
+            <button class="chip-btn border border-gray-200 dark:border-slate-600 rounded-full px-3 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">List required NDT</button>
+            <button class="chip-btn border border-gray-200 dark:border-slate-600 rounded-full px-3 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">Explain acceptance criteria</button>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700">
+            <div class="flex items-end gap-2 bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-1 focus-within:ring-2 focus-within:ring-brand-500 transition-all">
+                <textarea id="chatInput" rows="2" placeholder="Ask about the selected documents..." class="flex-1 bg-transparent border-none focus:ring-0 resize-none p-2 text-sm dark:text-white placeholder-gray-400"></textarea>
+                <button id="sendBtn" class="bg-brand-600 hover:bg-brand-700 text-white rounded p-2 mb-1 mr-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="mt-2 text-[10px] text-gray-400 text-center">
+                AI can make mistakes. Verify critical engineering parameters.
+            </div>
+        </div>
+    </aside>
+
+    <!-- Scripts -->
+    <script>
+        /**
+         * System Configuration & State Management
+         */
+        const STATE = {
+            apiKey: '', // Stored in memory only
+            apiValid: false,
+            documents: [], // Array of { id, name, type, size, pages: [{num, text}], fullText }
+            notebooks: [],
+            currentNotebookId: null,
+            selectedDocIds: new Set()
+        };
+
+        // DOM Elements
+        const DOM = {
+            themeToggle: document.getElementById('themeToggle'),
+            apiKeyInput: document.getElementById('apiKeyInput'),
+            testApiBtn: document.getElementById('testApiBtn'),
+            apiStatusIndicator: document.getElementById('apiStatusIndicator'),
+            apiStatusText: document.getElementById('apiStatusText'),
+            modelSelect: document.getElementById('modelSelect'),
+            fileUpload: document.getElementById('fileUpload'),
+            documentList: document.getElementById('documentList'),
+            docLoadingOverlay: document.getElementById('docLoadingOverlay'),
+            
+            // Viewer
+            tabBtns: document.querySelectorAll('.tab-btn'),
+            tabContents: document.querySelectorAll('.tab-content'),
+            noDocSelected: document.getElementById('noDocSelected'),
+            docViewer: document.getElementById('docViewer'),
+            docViewerTitle: document.getElementById('docViewerTitle'),
+            docViewerType: document.getElementById('docViewerType'),
+            docViewerPages: document.getElementById('docViewerPages'),
+            docViewerContent: document.getElementById('docViewerContent'),
+            summaryContent: document.getElementById('summaryContent'),
+            
+            // Chat
+            chatHistory: document.getElementById('chatHistory'),
+            chatInput: document.getElementById('chatInput'),
+            sendBtn: document.getElementById('sendBtn'),
+            clearChatBtn: document.getElementById('clearChatBtn'),
+            exportChatBtn: document.getElementById('exportChatBtn'),
+            notebookSelect: document.getElementById('notebookSelect'),
+            newNotebookBtn: document.getElementById('newNotebookBtn'),
+            
+            // Quick Actions & Chips
+            quickActionBtns: document.querySelectorAll('.quick-action-btn'),
+            chipBtns: document.querySelectorAll('.chip-btn')
+        };
+
+        /**
+         * System Prompt (Agentic Behavior & QA/QC Focus)
+         */
+        const SYSTEM_PROMPT = `You are DocuMind QA AI, an expert engineering, QA/QC, and technical document analysis assistant. 
+        
+        CORE PHILOSOPHY: Source-grounded RAG + Agentic Behavior.
+        
+        INSTRUCTIONS:
+        1. CLASSIFY THE QUERY: First, analyze if the user's question is:
+           - Document-related: Answer STRICTLY based on provided document context.
+           - Generic: Answer normally, but state "Note: This answer is based on general knowledge, not the uploaded documents."
+           - Mixed: Provide evidence from documents first, then add "General AI Explanation".
+           - Compliance/QAQC: Provide professional engineering-style answers (risks, checklists, action items).
+           - Unclear: Ask for clarification.
+           
+        2. CITATION BEHAVIOR (MANDATORY for document answers):
+           - NEVER invent page numbers. Use the exact [Page X] or [Section] tags provided in the context.
+           - Always append a "References:" section at the end.
+           - Citation Format: "Document: [Name] | Page: [Num] | Evidence: '[Short quote]'"
+           - If information is missing from context, explicitly state: "I could not find this in the selected document(s)."
+           
+        3. PROFESSIONAL QA/QC FORMATTING:
+           When answering technical questions based on documents, structure your answer:
+           **Answer:** [Clear direct answer]
+           **Evidence from document:** [Bullet points]
+           **QA/QC interpretation:** [Engineering/Quality implications]
+           **Action items:** [Next steps if applicable]
+           **References:** [Citations]
+           
+        4. SUMMARY/COMPARISON: If asked to summarize or compare, structure clearly with Executive Summary, Key Requirements, Acceptance Criteria, Risks, and References.`;
+
+        /**
+         * Initialization & Theme
+         */
+        function init() {
+            // Theme setup
+            if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+            
+            // Load Notebooks
+            loadNotebooks();
+            
+            // Event Listeners
+            DOM.themeToggle.addEventListener('click', toggleTheme);
+            DOM.testApiBtn.addEventListener('click', testApiKey);
+            DOM.fileUpload.addEventListener('change', handleFileUpload);
+            DOM.sendBtn.addEventListener('click', handleChatSubmit);
+            DOM.chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(); }
+            });
+            DOM.clearChatBtn.addEventListener('click', clearChat);
+            DOM.exportChatBtn.addEventListener('click', exportChat);
+            DOM.newNotebookBtn.addEventListener('click', createNotebook);
+            DOM.notebookSelect.addEventListener('change', switchNotebook);
+            
+            // Tabs
+            DOM.tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => switchTab(btn.dataset.target));
+            });
+
+            // Quick Actions & Chips
+            DOM.quickActionBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    DOM.chatInput.value = btn.dataset.prompt;
+                    handleChatSubmit();
+                    if(btn.dataset.prompt.includes("Summary")) switchTab('summaryView');
+                });
+            });
+            DOM.chipBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    DOM.chatInput.value = btn.textContent;
+                    handleChatSubmit();
+                });
+            });
+        }
+
+        function toggleTheme() {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        function switchTab(targetId) {
+            DOM.tabBtns.forEach(btn => {
+                btn.classList.remove('active', 'border-brand-600', 'text-brand-600', 'dark:text-brand-400');
+                btn.classList.add('border-transparent', 'text-gray-500');
+                if (btn.dataset.target === targetId) {
+                    btn.classList.add('active', 'border-brand-600', 'text-brand-600', 'dark:text-brand-400');
+                    btn.classList.remove('border-transparent', 'text-gray-500');
+                }
+            });
+            DOM.tabContents.forEach(content => {
+                content.classList.add('hidden');
+                if (content.id === targetId) content.classList.remove('hidden');
+            });
+        }
+
+        /**
+         * Notebook Management (LocalStorage)
+         */
+        function loadNotebooks() {
+            const saved = localStorage.getItem('documind_notebooks');
+            if (saved) {
+                STATE.notebooks = JSON.parse(saved);
+            }
+            if (STATE.notebooks.length === 0) {
+                const defaultNb = { id: Date.now().toString(), name: 'Default Project', chat: [] };
+                STATE.notebooks.push(defaultNb);
+            }
+            
+            STATE.currentNotebookId = localStorage.getItem('documind_current_nb') || STATE.notebooks[0].id;
+            
+            renderNotebookSelect();
+            renderChatHistory();
+        }
+
+        function saveNotebooks() {
+            localStorage.setItem('documind_notebooks', JSON.stringify(STATE.notebooks));
+            localStorage.setItem('documind_current_nb', STATE.currentNotebookId);
+        }
+
+        function renderNotebookSelect() {
+            DOM.notebookSelect.innerHTML = '';
+            STATE.notebooks.forEach(nb => {
+                const opt = document.createElement('option');
+                opt.value = nb.id;
+                opt.textContent = nb.name;
+                if (nb.id === STATE.currentNotebookId) opt.selected = true;
+                DOM.notebookSelect.appendChild(opt);
+            });
+        }
+
+        function createNotebook() {
+            const name = prompt("Enter project/notebook name:");
+            if (name && name.trim()) {
+                const newNb = { id: Date.now().toString(), name: name.trim(), chat: [] };
+                STATE.notebooks.push(newNb);
+                STATE.currentNotebookId = newNb.id;
+                saveNotebooks();
+                renderNotebookSelect();
+                renderChatHistory();
+                
+                // Clear session documents for new project
+                STATE.documents = [];
+                STATE.selectedDocIds.clear();
+                renderDocumentList();
+                updateViewer();
+            }
+        }
+
+        function switchNotebook() {
+            STATE.currentNotebookId = DOM.notebookSelect.value;
+            saveNotebooks();
+            renderChatHistory();
+        }
+
+        /**
+         * API Key Management
+         */
+        async function testApiKey() {
+            const key = DOM.apiKeyInput.value.trim();
+            if (!key) {
+                alert("Please enter an API Key first.");
+                return;
+            }
+
+            DOM.apiStatusText.textContent = "Testing...";
+            DOM.testApiBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+            try {
+                // Test by fetching models list
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+                if (res.ok) {
+                    STATE.apiKey = key;
+                    STATE.apiValid = true;
+                    DOM.apiStatusIndicator.classList.remove('bg-gray-400', 'bg-red-500');
+                    DOM.apiStatusIndicator.classList.add('bg-green-500', 'glowing-green');
+                    DOM.apiStatusText.textContent = "Connected";
+                    DOM.apiStatusText.classList.add('text-green-600', 'dark:text-green-400');
+                    DOM.apiKeyInput.type = "password"; // hide key
+                } else {
+                    throw new Error("Invalid Key");
+                }
+            } catch (err) {
+                STATE.apiKey = '';
+                STATE.apiValid = false;
+                DOM.apiStatusIndicator.classList.remove('bg-gray-400', 'bg-green-500', 'glowing-green');
+                DOM.apiStatusIndicator.classList.add('bg-red-500');
+                DOM.apiStatusText.textContent = "Connection Failed";
+                DOM.apiStatusText.classList.remove('text-green-600', 'dark:text-green-400');
+                DOM.apiStatusText.classList.add('text-red-500');
+            } finally {
+                DOM.testApiBtn.innerHTML = '<i class="fa-solid fa-plug"></i>';
+            }
+        }
+
+        /**
+         * File Processing
+         */
+        async function handleFileUpload(e) {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            DOM.docLoadingOverlay.classList.remove('hidden');
+            DOM.docLoadingOverlay.classList.add('flex');
+
+            for (const file of files) {
+                try {
+                    let docObj = {
+                        id: 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                        name: file.name,
+                        type: file.type || getExtension(file.name),
+                        size: formatBytes(file.size),
+                        pages: [],
+                        fullText: ''
+                    };
+
+                    const ext = getExtension(file.name).toLowerCase();
+
+                    if (ext === 'pdf') {
+                        docObj = await parsePDF(file, docObj);
+                    } else if (ext === 'docx') {
+                        docObj = await parseDOCX(file, docObj);
+                    } else if (ext === 'txt' || file.type.startsWith('text/')) {
+                        docObj = await parseTXT(file, docObj);
+                    } else {
+                        alert(`Unsupported file type: ${file.name}`);
+                        continue;
+                    }
+
+                    STATE.documents.push(docObj);
+                    STATE.selectedDocIds.add(docObj.id); // auto-select
+                } catch (err) {
+                    console.error(`Error processing ${file.name}:`, err);
+                    alert(`Failed to process ${file.name}. Ensure it is a valid, readable file.`);
+                }
+            }
+
+            DOM.docLoadingOverlay.classList.remove('flex');
+            DOM.docLoadingOverlay.classList.add('hidden');
+            DOM.fileUpload.value = ''; // reset
+            renderDocumentList();
+            
+            // Auto view the last uploaded doc
+            if (STATE.documents.length > 0) {
+                viewDocument(STATE.documents[STATE.documents.length - 1].id);
+            }
+        }
+
+        function getExtension(filename) {
+            return filename.split('.').pop();
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        // PDF Text Extraction via PDF.js
+        async function parsePDF(file, docObj) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                docObj.pages.push({ num: i, text: pageText });
+                docObj.fullText += `\n--- [Page ${i}] ---\n${pageText}`;
+            }
+            return docObj;
+        }
+
+        // DOCX Text Extraction via Mammoth
+        async function parseDOCX(file, docObj) {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
+            const text = result.value;
+            // Fake pages by splitting every 2000 chars approximately for reference purposes
+            const chunks = text.match(/.{1,2000}(\s|$)/g) || [text];
+            chunks.forEach((chunk, idx) => {
+                docObj.pages.push({ num: idx + 1, text: chunk });
+                docObj.fullText += `\n--- [Section ${idx + 1}] ---\n${chunk}`;
+            });
+            return docObj;
+        }
+
+        // TXT Extraction
+        async function parseTXT(file, docObj) {
+            const text = await file.text();
+            docObj.pages.push({ num: 1, text: text });
+            docObj.fullText = `\n--- [Document Start] ---\n${text}`;
+            return docObj;
+        }
+
+        function renderDocumentList() {
+            DOM.documentList.innerHTML = '';
+            if (STATE.documents.length === 0) {
+                DOM.documentList.innerHTML = '<p class="text-xs text-gray-500 dark:text-gray-400 italic text-center py-2">No documents uploaded.</p>';
+                updateViewer();
+                return;
+            }
+
+            STATE.documents.forEach(doc => {
+                const div = document.createElement('div');
+                div.className = `flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${STATE.selectedDocIds.has(doc.id) ? 'bg-brand-50 border-brand-300 dark:bg-brand-900/30 dark:border-brand-700' : 'bg-white border-gray-200 dark:bg-slate-800 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'}`;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = "accent-brand-600";
+                checkbox.checked = STATE.selectedDocIds.has(doc.id);
+                checkbox.addEventListener('change', (e) => {
+                    e.stopPropagation();
+                    if (e.target.checked) STATE.selectedDocIds.add(doc.id);
+                    else STATE.selectedDocIds.delete(doc.id);
+                    renderDocumentList(); // Re-render to update classes
+                });
+
+                const iconInfo = getDocIcon(doc.type);
+                
+                const content = document.createElement('div');
+                content.className = "flex-1 min-w-0 flex items-center gap-2";
+                content.innerHTML = `
+                    <i class="${iconInfo.icon} ${iconInfo.color} text-lg"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title="${doc.name}">${doc.name}</p>
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400">${doc.size} • ${doc.pages.length} Pages</p>
+                    </div>
+                `;
+                
+                div.addEventListener('click', () => viewDocument(doc.id));
+                
+                div.appendChild(checkbox);
+                div.appendChild(content);
+                DOM.documentList.appendChild(div);
+            });
+        }
+
+        function getDocIcon(type) {
+            type = type.toLowerCase();
+            if (type.includes('pdf')) return { icon: 'fa-regular fa-file-pdf', color: 'text-red-500' };
+            if (type.includes('word') || type.includes('docx')) return { icon: 'fa-regular fa-file-word', color: 'text-blue-500' };
+            if (type.includes('text') || type.includes('txt')) return { icon: 'fa-regular fa-file-lines', color: 'text-gray-500' };
+            return { icon: 'fa-regular fa-file', color: 'text-gray-400' };
+        }
+
+        function viewDocument(docId) {
+            const doc = STATE.documents.find(d => d.id === docId);
+            if (!doc) return;
+            
+            switchTab('preview');
+            DOM.noDocSelected.classList.add('hidden');
+            DOM.docViewer.classList.remove('hidden');
+            
+            DOM.docViewerTitle.textContent = doc.name;
+            DOM.docViewerType.textContent = doc.type.split('/')[1]?.toUpperCase() || doc.type.toUpperCase();
+            DOM.docViewerPages.textContent = `${doc.pages.length} Pages/Sections`;
+            
+            // Render content cleanly
+            DOM.docViewerContent.textContent = doc.fullText.substring(0, 50000); // Preview limit to avoid browser lag
+            if(doc.fullText.length > 50000) {
+                DOM.docViewerContent.textContent += `\n\n... [Preview truncated. Full text available to AI (${formatBytes(doc.fullText.length)} chars)]`;
+            }
+        }
+
+        function updateViewer() {
+            if (STATE.documents.length === 0) {
+                DOM.noDocSelected.classList.remove('hidden');
+                DOM.docViewer.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Chat & AI Integration
+         */
+        function getCurrentNotebook() {
+            return STATE.notebooks.find(nb => nb.id === STATE.currentNotebookId);
+        }
+
+        function renderChatHistory() {
+            const nb = getCurrentNotebook();
+            DOM.chatHistory.innerHTML = `
+                <div class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-robot text-brand-600 dark:text-brand-400"></i>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-3 rounded-lg rounded-tl-none shadow-sm text-sm">
+                        <p>Hello! I am ready to analyze <strong>${nb.name}</strong>. Upload documents and select them using the checkboxes.</p>
+                    </div>
+                </div>
+            `;
+            
+            if (nb && nb.chat) {
+                nb.chat.forEach(msg => appendMessageToUI(msg.role, msg.content, false));
+            }
+            scrollToBottom();
+        }
+
+        function appendMessageToUI(role, content, save = true) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = "flex gap-3 mt-4";
+            
+            if (role === 'user') {
+                msgDiv.classList.add('flex-row-reverse');
+                msgDiv.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-user text-gray-600 dark:text-gray-300"></i>
+                    </div>
+                    <div class="bg-brand-600 text-white p-3 rounded-lg rounded-tr-none shadow-sm text-sm max-w-[85%] whitespace-pre-wrap">${escapeHTML(content)}</div>
+                `;
+            } else {
+                msgDiv.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900 flex items-center justify-center flex-shrink-0 mt-1">
+                        <i class="fa-solid fa-robot text-brand-600 dark:text-brand-400"></i>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-3 rounded-lg rounded-tl-none shadow-sm text-sm max-w-[85%] markdown-body w-full overflow-hidden relative group">
+                        <button class="copy-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-100 dark:bg-slate-700 text-gray-500 hover:text-brand-600 p-1.5 rounded" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                        ${marked.parse(content)}
+                    </div>
+                `;
+                
+                // Add copy functionality
+                setTimeout(() => {
+                    const copyBtn = msgDiv.querySelector('.copy-btn');
+                    if(copyBtn) {
+                        copyBtn.addEventListener('click', () => {
+                            navigator.clipboard.writeText(content);
+                            copyBtn.innerHTML = '<i class="fa-solid fa-check text-green-500"></i>';
+                            setTimeout(() => copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i>', 2000);
+                        });
+                    }
+                }, 0);
+            }
+            
+            DOM.chatHistory.appendChild(msgDiv);
+            scrollToBottom();
+            
+            if (save) {
+                const nb = getCurrentNotebook();
+                nb.chat.push({ role, content });
+                saveNotebooks();
+            }
+        }
+
+        function scrollToBottom() {
+            DOM.chatHistory.scrollTop = DOM.chatHistory.scrollHeight;
+        }
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag]));
+        }
+
+        async function handleChatSubmit() {
+            const query = DOM.chatInput.value.trim();
+            if (!query) return;
+
+            if (!STATE.apiValid) {
+                alert("Please connect a valid Gemini API Key first.");
+                DOM.apiKeyInput.focus();
+                return;
+            }
+
+            // UI Update
+            DOM.chatInput.value = '';
+            DOM.sendBtn.disabled = true;
+            appendMessageToUI('user', query);
+
+            // Show loading
+            const loadingId = 'loading_' + Date.now();
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = loadingId;
+            loadingDiv.className = "flex gap-3 mt-4";
+            loadingDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-robot text-brand-600 dark:text-brand-400"></i>
+                </div>
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-3 rounded-lg rounded-tl-none shadow-sm text-sm flex items-center gap-2">
+                    <div class="loader !w-4 !h-4 !border-2"></div> <span class="text-gray-500">Analyzing documents & thinking...</span>
+                </div>
+            `;
+            DOM.chatHistory.appendChild(loadingDiv);
+            scrollToBottom();
+
+            try {
+                const response = await callGeminiAPI(query);
+                document.getElementById(loadingId).remove();
+                appendMessageToUI('assistant', response);
+                
+                // If it was a summary request, also inject it into the Summary Tab
+                if (query.toLowerCase().includes('summarize') || query.toLowerCase().includes('summary')) {
+                    DOM.summaryContent.innerHTML = marked.parse(response);
+                    switchTab('summaryView');
+                }
+
+            } catch (err) {
+                document.getElementById(loadingId).remove();
+                appendMessageToUI('assistant', `**Error:** Failed to get response. \n\nDetails: ${err.message}`);
+            } finally {
+                DOM.sendBtn.disabled = false;
+                DOM.chatInput.focus();
+            }
+        }
+
+        async function callGeminiAPI(userQuery) {
+            const model = DOM.modelSelect.value;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${STATE.apiKey}`;
+
+            // Build Context from Selected Documents
+            let contextText = "";
+            let selectedDocsInfo = [];
+            STATE.selectedDocIds.forEach(id => {
+                const doc = STATE.documents.find(d => d.id === id);
+                if (doc) {
+                    contextText += `\n\n================================\nDOCUMENT: ${doc.name}\n================================\n${doc.fullText}`;
+                    selectedDocsInfo.push(doc.name);
+                }
+            });
+
+            // Prevent huge context limit crashes blindly (Gemini 1.5/2.5 supports 1M/2M tokens, 
+            // ~4 chars per token -> ~4M chars. Let's cap roughly at 3M chars to be safe).
+            if (contextText.length > 3000000) {
+                contextText = contextText.substring(0, 3000000) + "\n\n[CONTEXT TRUNCATED DUE TO LENGTH LIMITS]";
+            }
+
+            const promptToSend = selectedDocsInfo.length > 0 
+                ? `Context Documents Selected: ${selectedDocsInfo.join(', ')}\n\nDOCUMENT CONTENT:\n${contextText}\n\nUSER QUERY:\n${userQuery}`
+                : `No documents selected. Answer generically.\n\nUSER QUERY:\n${userQuery}`;
+
+            // Retrieve recent chat history for context (last 4 messages)
+            const nb = getCurrentNotebook();
+            const historyParts = [];
+            if(nb && nb.chat) {
+                const recentHistory = nb.chat.slice(-4);
+                recentHistory.forEach(msg => {
+                    historyParts.push({
+                        role: msg.role === 'user' ? 'user' : 'model',
+                        parts: [{ text: msg.content }]
+                    });
+                });
+            }
+
+            const payload = {
+                systemInstruction: {
+                    parts: [{ text: SYSTEM_PROMPT }]
+                },
+                contents: [
+                    ...historyParts,
+                    {
+                        role: "user",
+                        parts: [{ text: promptToSend }]
+                    }
+                ],
+                generationConfig: {
+                    temperature: 0.2 // Low temperature for factual QA/QC
+                }
+            };
+
+            // Implement Exponential Backoff Retry Strategy as requested
+            const maxRetries = 5;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            for (let i = 0; i <= maxRetries; i++) {
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error?.message || `HTTP ${res.status}`);
+                    }
+
+                    const data = await res.json();
+                    if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+                        return data.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Unexpected API response format");
+                    }
+                } catch (err) {
+                    if (i === maxRetries) {
+                        throw err; // All retries failed
+                    }
+                    // Wait and retry
+                    await new Promise(resolve => setTimeout(resolve, delays[i]));
+                }
+            }
+        }
+
+        function clearChat() {
+            if (confirm("Are you sure you want to clear the chat history for this notebook?")) {
+                const nb = getCurrentNotebook();
+                nb.chat = [];
+                saveNotebooks();
+                renderChatHistory();
+                DOM.summaryContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-gray-400 text-center">
+                    <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-gray-300 dark:text-slate-600"></i>
+                    <p>Click "Summarize" in the left panel or ask the chat to generate insights here.</p>
+                </div>`;
+            }
+        }
+
+        function exportChat() {
+            const nb = getCurrentNotebook();
+            if (!nb || nb.chat.length === 0) return alert("Chat is empty.");
+
+            let exportText = `# DocuMind QA AI - Export for Project: ${nb.name}\nDate: ${new Date().toLocaleString()}\n\n`;
+            
+            nb.chat.forEach(msg => {
+                const role = msg.role === 'user' ? 'USER' : 'AI ASSISTANT';
+                exportText += `### ${role}:\n${msg.content}\n\n---\n\n`;
+            });
+
+            const blob = new Blob([exportText], { type: "text/markdown" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `DocuMind_Export_${nb.name.replace(/\s+/g, '_')}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
